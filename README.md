@@ -13,7 +13,7 @@ Example of a TPKX/VTPK archive displayed in MapLibre GL JS:
 ```js
 import * as tilePackage from "maplibre-tilepackage-protocol";
 let protocol = new tilePackage.Protocol();
-maplibregl.addProtocol("tilepackage",protocol.tile);
+maplibregl.addProtocol("tilepackage",protocol.package);
 var style = {
 "version": 8,
 "sources": {
