@@ -1,0 +1,20 @@
+{
+  "name": "maplibre-tilepackage-protocol",
+  "version": "1.0.0",
+  "description": "Maplibre-gl-js protocol for reading VTPK and TPKX files",
+  "homepage": "https://github.com/spatialillusions/maplibre-tilepackage-protocol#readme",
+  "bugs": {
+    "url": "https://github.com/spatialillusions/maplibre-tilepackage-protocol/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/spatialillusions/maplibre-tilepackage-protocol.git"
+  },
+  "license": "MIT",
+  "author": "Måns Beckman",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
