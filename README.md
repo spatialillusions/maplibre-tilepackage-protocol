@@ -72,3 +72,7 @@ The code for this protocol was based on the PMTiles protocol by Protomaps LLC.
 A sample dataset covering Austria can be downloaded from the following link. Note that this file is an indexed VTPK and won't display all tiles correctly without modifying Maplibre.
 
 https://www.data.gv.at/katalog/de/dataset/basemap-at-verwaltungsgrundkarte-vektor-offline-osterreich#resources
+
+# Supporting my work
+
+If you like my work and would like to support it, please use https://buymeacoffee.com/spatialillusion
