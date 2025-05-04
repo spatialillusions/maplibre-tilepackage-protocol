@@ -1,5 +1,5 @@
 import { TilePackage } from "./index.js";
-import protocolGlyphs from "../protocol-glyphs.js";
+import protocolGlyphs from "maplibre-local-glyphs";
 
 function stringEndsIn(string, endings) {
   for (let i = 0; i < endings.length; i++) {

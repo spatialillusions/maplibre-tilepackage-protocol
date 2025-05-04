@@ -1,6 +1,6 @@
 {
   "name": "maplibre-tilepackage-protocol",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Maplibre-gl-js protocol for reading VTPK and TPKX files",
   "homepage": "https://github.com/spatialillusions/maplibre-tilepackage-protocol#readme",
   "bugs": {
@@ -16,5 +16,8 @@
   "main": "src/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "maplibre-local-glyphs": "^1.2.0"
   }
 }
