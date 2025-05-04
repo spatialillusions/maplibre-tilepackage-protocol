@@ -1,5 +1,7 @@
 # maplibre-tilepackage-protocol
 
+This is a maplibre-gl-js protocol for reading Esri TPKX and Esri VTPK files, both locally and server based files are supported. 
+
 As an ES6 module: `npm add maplibre-tilepackage-protocol`
 
 ```js
