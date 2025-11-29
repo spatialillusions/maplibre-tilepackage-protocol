@@ -278,7 +278,8 @@ export default async function getHeaderAndFileList(source) {
       coverageMap[0][0][0] = "blob";
       calculateCoverage(0, 0, 0, tilemap.index, coverageMap);
       root.coverageMap = coverageMap;
-      console.log("coverage map", coverageMap);
+    } else {
+      // Coverage map unavailable (either disabled or missing tilemap/root.json)
     }
   }
 

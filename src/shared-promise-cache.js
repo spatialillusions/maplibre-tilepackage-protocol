@@ -80,6 +80,7 @@ export default class SharedPromiseCache {
     this.maxCacheEntries = maxCacheEntries;
     this.counter = 1;
     //this.decompress = decompress;
+    this.subdivided = new Map(); // key: sourceKey|z|x|y -> Uint8Array
   }
 
   async getHeader(source) {
@@ -170,6 +171,28 @@ export default class SharedPromiseCache {
       });
       if (minKey) {
         this.cache.delete(minKey);
+      }
+    }
+  }
+
+  getSubdivided(source, z, x, y) {
+    const key = `${source.getKey()}|${z}|${x}|${y}|Subdivided`;
+    return this.subdivided.get(key);
+  }
+
+  setSubdivided(source, z, x, y, bytes) {
+    const key = `${source.getKey()}|${z}|${x}|${y}|Subdivided`;
+    if (!this.subdivided.has(key)) {
+      this.subdivided.set(key, bytes);
+      // Optional lightweight prune if huge:
+      if (this.subdivided.size > this.maxCacheEntries * 2) {
+        // Remove oldest half (no usage tracking kept; iterate arbitrary)
+        let toRemove = Math.floor(this.subdivided.size / 2);
+        for (const k of this.subdivided.keys()) {
+          this.subdivided.delete(k);
+          toRemove--;
+          if (toRemove <= 0) break;
+        }
       }
     }
   }

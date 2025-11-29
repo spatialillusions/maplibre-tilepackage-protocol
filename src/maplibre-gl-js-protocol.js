@@ -224,15 +224,6 @@ export class Protocol {
           if (this.debug)
             console.debug("[tilepackage] missing tile", { z, x, y });
           throw e;
-          //*/
-          /*
-          const response = new Response(null, {
-            status: 204,
-            statusText: `Tile [${z},${x},${y},] not found in Tile Package, this is normal for VTPK files with variable tile depth.`,
-          });
-          console.log(response);
-          return response;
-          //*/
         }
         return { data: new Uint8Array() };
       } else {

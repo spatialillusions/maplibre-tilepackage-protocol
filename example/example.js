@@ -74,12 +74,26 @@
     if (!u) return null;
     u = u.trim();
     if (!u) return null;
-    // Basic guard: only allow http/https
-    if (!/^https?:\/\//i.test(u)) {
-      alert("URL must start with http:// or https://");
+    // Allow absolute http(s)
+    if (/^https?:\/\//i.test(u)) return u;
+    // Disallow protocol-relative and other schemes
+    if (u.startsWith("//") || /^[a-zA-Z]+:\/.+/.test(u)) {
+      alert("Unsupported or unsafe URL scheme");
       return null;
     }
-    return u;
+    // Treat as relative path when not file://
+    if (location.protocol !== "file:") {
+      try {
+        const resolved = new URL(u, window.location.href).href;
+        console.debug("[example] Resolved relative URL to", resolved);
+        return resolved;
+      } catch (e) {
+        alert("Invalid relative URL");
+        return null;
+      }
+    }
+    alert("URL must start with http:// or https:// when using file:// origin");
+    return null;
   }
 
   function initWithUrl(url) {

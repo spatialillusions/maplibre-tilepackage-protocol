@@ -1,6 +1,7 @@
 export * from "./maplibre-gl-js-protocol.js";
 export * from "./source.js";
 import { FetchSource } from "./source.js";
+import subdivideVectorTile from "./tilecutter/subdivide.js";
 import defaultDecompress from "./default-decompress.js";
 import getJsonFromFile from "./get-json-from-file.js";
 import SharedPromiseCache from "./shared-promise-cache.js";
@@ -11,12 +12,7 @@ function calculateFilename(z, x, y, header) {
   const baseCol = Math.floor(x / 128) * 128;
   const rowHex = baseRow.toString(16).padStart(4, "0");
   const colHex = baseCol.toString(16).padStart(4, "0");
-  let basePath;
-  if (header.type === "tpkx") {
-    basePath = `tile`;
-  } else {
-    basePath = `p12/tile`;
-  }
+  let basePath = header.type === "tpkx" ? "tile" : "p12/tile";
   return `${basePath}/L${zoom}/R${rowHex}C${colHex}.bundle`;
 }
 
@@ -26,10 +22,6 @@ function getTileInfoFromTileIndex(tileIndex, z, x, y) {
   return tileIndex[row][col];
 }
 
-/**
- * Error thrown when a response for TilePackage over HTTP does not match previous, cached parts of the archive.
- * The default TilePackage implementation will catch this error once internally and retry a request.
- */
 class EtagMismatch extends Error {
   constructor(message) {
     super(message);
@@ -39,27 +31,28 @@ class EtagMismatch extends Error {
 
 export class TilePackage {
   constructor(source, options) {
-    this.coverageCheck = 0;
-    if (options && options.coverageCheck) {
-      this.coverageCheck = options.coverageCheck;
-    }
+    // Default coverageCheck enabled; disable with coverageCheck:false
+    this.coverageCheck = 1;
+    if (options && options.coverageCheck === false) this.coverageCheck = 0;
+    // Max dz guard (skip subdivision beyond this): default 8
+    this.maxDz =
+      options && typeof options.maxDz === "number" ? options.maxDz : 8;
     if (typeof source === "string") {
-      this.source = new FetchSource(source, this.coverageCheck);
+      const opts = this.coverageCheck
+        ? { coverageCheck: this.coverageCheck }
+        : undefined;
+      this.source = new FetchSource(source, opts);
     } else {
       this.source = source;
+      // Propagate default coverageCheck to existing Source instances if undefined
+      if (this.source && this.source.coverageCheck === undefined) {
+        this.source.coverageCheck = this.coverageCheck;
+      }
     }
-
-    if (options && options.decompress) {
-      this.decompress = options.decompress;
-    } else {
-      this.decompress = defaultDecompress;
-    }
-
-    if (options && options.cache) {
-      this.cache = options.cache;
-    } else {
-      this.cache = new SharedPromiseCache();
-    }
+    this.decompress =
+      options && options.decompress ? options.decompress : defaultDecompress;
+    this.cache =
+      options && options.cache ? options.cache : new SharedPromiseCache();
   }
 
   async getHeader() {
@@ -67,42 +60,99 @@ export class TilePackage {
   }
 
   async getZxyAttempt(z, x, y, signal) {
-    //y = (1 << z) - 1 - y; //TMS vs XYZ
     const header = await this.cache.getHeader(this.source);
-    if (z < header.minZoom || z > header.maxZoom) {
-      return undefined;
-    }
+    if (z < header.minZoom || z > header.maxZoom) return undefined;
     const file = calculateFilename(z, x, y, header);
-    if (!header.files[file]) {
-      return undefined;
-    }
-    const tileIndex = await this.cache.getTileIndex(
-      this.source,
-      file,
-      header,
-      signal,
-    );
-    const tileInfo = getTileInfoFromTileIndex(tileIndex, z, x, y);
-    if (tileInfo && tileInfo.tileSize > 0) {
-      const tileOffset =
-        header.files[file].absoluteOffset + tileInfo.tileOffset;
-      const resp = await this.source.getBytes(
-        tileOffset,
-        tileInfo.tileSize,
+    let tileInfo = null;
+    if (header.files[file]) {
+      const tileIndex = await this.cache.getTileIndex(
+        this.source,
+        file,
+        header,
         signal,
-        header.etag,
       );
-      const data = await this.decompress(resp.data, header.tileCompression);
-      return {
-        data: data,
-        cacheControl: resp.cacheControl,
-        expires: resp.expires,
-      };
-    } else {
-      //return await this.getZxyAttempt(z - 1, x / 2, y / 2, signal);
-      // Return undefined if the tile is not found
-      return undefined;
+      tileInfo = getTileInfoFromTileIndex(tileIndex, z, x, y);
+      if (tileInfo && tileInfo.tileSize > 0) {
+        const tileOffset =
+          header.files[file].absoluteOffset + tileInfo.tileOffset;
+        const resp = await this.source.getBytes(
+          tileOffset,
+          tileInfo.tileSize,
+          signal,
+          header.etag,
+        );
+        const data = await this.decompress(resp.data, header.tileCompression);
+        return { data, cacheControl: resp.cacheControl, expires: resp.expires };
+      }
     }
+    if (header.packageType === "vtpk" && header.coverageMap) {
+      // Ascend to find parent with value 1
+      let pz = z,
+        px = x,
+        py = y,
+        foundParent = null;
+      while (pz > header.minZoom) {
+        pz -= 1;
+        px = Math.floor(px / 2);
+        py = Math.floor(py / 2);
+        const level = header.coverageMap[pz];
+        const val = level && level[px] ? level[px][py] : undefined;
+        if (val === 1) {
+          foundParent = { pz, px, py };
+          break;
+        }
+      }
+      if (foundParent) {
+        const parent = await this.getZxyAttempt(
+          foundParent.pz,
+          foundParent.px,
+          foundParent.py,
+          signal,
+        );
+        if (parent && parent.data) {
+          const cached = this.cache.getSubdivided(this.source, z, x, y);
+          if (cached) {
+            return {
+              data: cached,
+              cacheControl: parent.cacheControl,
+              expires: parent.expires,
+            };
+          }
+          const dz = z - foundParent.pz;
+          if (dz > this.maxDz) {
+            return undefined; // exceed hard cap
+          }
+          try {
+            const { data: overzoomed } = subdivideVectorTile(
+              parent.data,
+              foundParent.pz,
+              foundParent.px,
+              foundParent.py,
+              z,
+              x,
+              y,
+              { buffer: 128, maxDzWarn: this.maxDz - 1 },
+            );
+            this.cache.setSubdivided(this.source, z, x, y, overzoomed);
+            return {
+              data: overzoomed,
+              cacheControl: parent.cacheControl,
+              expires: parent.expires,
+            };
+          } catch (e) {
+            console.warn(
+              `[tilepackage subdivide] failed for z=${z} x=${x} y=${y}:`,
+              e,
+            );
+          }
+        } else {
+          console.warn(
+            `[tilepackage subdivide] parent tile missing at z=${foundParent.pz} x=${foundParent.px} y=${foundParent.py}`,
+          );
+        }
+      }
+    }
+    return undefined;
   }
 
   async getZxy(z, x, y, signal) {
@@ -119,7 +169,6 @@ export class TilePackage {
 
   async getMetadataAttempt() {
     const header = await this.cache.getHeader(this.source);
-
     let metadata = {};
     if (header.packageType === "vtpk") {
       const resp = await this.source.getBytes(
@@ -128,12 +177,10 @@ export class TilePackage {
         undefined,
         header.etag,
       );
-
       const decoder = new TextDecoder("utf-8");
       metadata = JSON.parse(decoder.decode(resp.data));
     }
     metadata.name = header.name;
-
     return metadata;
   }
 
@@ -151,10 +198,7 @@ export class TilePackage {
 
   async getResourceAttempt(file, signal) {
     const header = await this.cache.getHeader(this.source);
-    if (!header.files[file]) {
-      return undefined;
-    }
-
+    if (!header.files[file]) return undefined;
     const resource = await this.cache.getResource(
       this.source,
       file,
@@ -194,7 +238,6 @@ export class TilePackage {
         header.files,
         this.source,
       );
-      // Replace url with tiles to prevent MapLibre attempting a TileJSON fetch under file://
       if (style.sources && style.sources.esri) {
         delete style.sources.esri.url;
         style.sources.esri.tiles = [`tilepackage://${sourceKey}/{z}/{x}/{y}`];
@@ -202,7 +245,6 @@ export class TilePackage {
         style.sources.esri.minzoom = header.minZoom || 0;
         style.sources.esri.maxzoom = header.maxZoom || 22;
       }
-      // Remove any other tilepackage:// url indirections
       for (const k in style.sources) {
         const src = style.sources[k];
         if (
@@ -215,9 +257,8 @@ export class TilePackage {
             src.tiles = [`tilepackage://${sourceKey}/{z}/{x}/{y}`];
         }
       }
-      if (metadata.copyrightText) {
+      if (metadata.copyrightText)
         style.sources.esri.attribution = metadata.copyrightText;
-      }
       style.glyphs = `tilepackage://${sourceKey}/{fontstack}/{range}`;
       style.sprite = `tilepackage://${sourceKey}/sprite`;
       if (this.debug)
@@ -226,27 +267,20 @@ export class TilePackage {
           style.sources.esri,
         );
       return style;
-    } else {
-      return {
-        version: 8,
-        sources: {
-          esri: {
-            type: "raster",
-            tileSize: header.tileSize || 256,
-            tiles: [`tilepackage://${sourceKey}/{z}/{x}/{y}`],
-            maxzoom: header.maxZoom || 22,
-            minzoom: header.minZoom || 0,
-          },
-        },
-        layers: [
-          {
-            id: "tilepackageraster",
-            type: "raster",
-            source: "esri",
-          },
-        ],
-      };
     }
+    return {
+      version: 8,
+      sources: {
+        esri: {
+          type: "raster",
+          tileSize: header.tileSize || 256,
+          tiles: [`tilepackage://${sourceKey}/{z}/{x}/{y}`],
+          maxzoom: header.maxZoom || 22,
+          minzoom: header.minZoom || 0,
+        },
+      },
+      layers: [{ id: "tilepackageraster", type: "raster", source: "esri" }],
+    };
   }
 
   async getStyle() {
@@ -265,7 +299,6 @@ export class TilePackage {
     const header = await this.getHeader();
     const metadata = await this.getMetadata();
     const ext = header.tileType;
-
     const tileJson = {
       tilejson: "3.0.0",
       scheme: "xyz",
@@ -274,21 +307,11 @@ export class TilePackage {
       version: header.version,
       bounds: [header.minLon, header.minLat, header.maxLon, header.maxLat],
     };
-    if (metadata.vector_layers) {
-      tileJson.vector_layers = metadata.vector_layers;
-    }
-    if (metadata.attribution) {
-      tileJson.attribution = metadata.attribution;
-    }
-    if (metadata.description) {
-      tileJson.description = metadata.description;
-    }
-    if (header.minZoom) {
-      tileJson.minzoom = header.minZoom;
-    }
-    if (header.maxZoom) {
-      tileJson.maxzoom = header.maxZoom;
-    }
+    if (metadata.vector_layers) tileJson.vector_layers = metadata.vector_layers;
+    if (metadata.attribution) tileJson.attribution = metadata.attribution;
+    if (metadata.description) tileJson.description = metadata.description;
+    if (header.minZoom) tileJson.minzoom = header.minZoom;
+    if (header.maxZoom) tileJson.maxzoom = header.maxZoom;
     return tileJson;
   }
 }
