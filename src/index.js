@@ -38,21 +38,25 @@ class EtagMismatch extends Error {
 }
 
 export class TilePackage {
-  constructor(source, cache, decompress) {
+  constructor(source, options) {
+    this.coverageCheck = 0;
+    if (options && options.coverageCheck) {
+      this.coverageCheck = options.coverageCheck;
+    }
     if (typeof source === "string") {
-      this.source = new FetchSource(source);
+      this.source = new FetchSource(source, this.coverageCheck);
     } else {
       this.source = source;
     }
 
-    if (decompress) {
-      this.decompress = decompress;
+    if (options && options.decompress) {
+      this.decompress = options.decompress;
     } else {
       this.decompress = defaultDecompress;
     }
 
-    if (cache) {
-      this.cache = cache;
+    if (options && options.cache) {
+      this.cache = options.cache;
     } else {
       this.cache = new SharedPromiseCache();
     }
@@ -180,16 +184,47 @@ export class TilePackage {
     const header = await this.cache.getHeader(this.source);
     const sourceKey = this.source.getKey();
     if (header.packageType === "vtpk") {
+      const metadata = await getJsonFromFile(
+        "p12/root.json",
+        header.files,
+        this.source,
+      );
       const style = await getJsonFromFile(
         "p12/resources/styles/root.json",
         header.files,
         this.source,
       );
-      style.sources.esri.url = `"tilepackage://${sourceKey}`;
-      style.sources.esri.maxzoom = header.maxZoom || 22;
+      // Replace url with tiles to prevent MapLibre attempting a TileJSON fetch under file://
+      if (style.sources && style.sources.esri) {
+        delete style.sources.esri.url;
+        style.sources.esri.tiles = [`tilepackage://${sourceKey}/{z}/{x}/{y}`];
+        style.sources.esri.type = style.sources.esri.type || "vector";
+        style.sources.esri.minzoom = header.minZoom || 0;
+        style.sources.esri.maxzoom = header.maxZoom || 22;
+      }
+      // Remove any other tilepackage:// url indirections
+      for (const k in style.sources) {
+        const src = style.sources[k];
+        if (
+          src &&
+          typeof src.url === "string" &&
+          src.url.startsWith("tilepackage://")
+        ) {
+          delete src.url;
+          if (!src.tiles)
+            src.tiles = [`tilepackage://${sourceKey}/{z}/{x}/{y}`];
+        }
+      }
+      if (metadata.copyrightText) {
+        style.sources.esri.attribution = metadata.copyrightText;
+      }
       style.glyphs = `tilepackage://${sourceKey}/{fontstack}/{range}`;
       style.sprite = `tilepackage://${sourceKey}/sprite`;
-
+      if (this.debug)
+        console.debug(
+          "[tilepackage style] rewritten esri source",
+          style.sources.esri,
+        );
       return style;
     } else {
       return {
@@ -198,8 +233,9 @@ export class TilePackage {
           esri: {
             type: "raster",
             tileSize: header.tileSize || 256,
-            url: `"tilepackage://${sourceKey}`,
+            tiles: [`tilepackage://${sourceKey}/{z}/{x}/{y}`],
             maxzoom: header.maxZoom || 22,
+            minzoom: header.minZoom || 0,
           },
         },
         layers: [

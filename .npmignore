@@ -1,0 +1,6 @@
+# Exclude example data from published package
+example/
+
+# Optionally exclude misc development artifacts
+# *.log
+# *.md

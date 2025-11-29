@@ -59,6 +59,7 @@ export function jsonToHeader(json, files, etag) {
     maxLon: Number(json.extent.xmax),
     maxLat: Number(json.extent.ymax),
     files: files,
+    coverageMap: json.coverageMap,
     etag: etag,
   };
 }
@@ -239,11 +240,48 @@ export default async function getHeaderAndFileList(source) {
       root.metadataOffset = metadataOffset;
       root.metadataLength = tilePackageFiles["p12/metadata.json"].size;
     }
+
+    async function calculateCoverage(z, x, y, tilemap, coverageMap) {
+      z = z + 1;
+      x = x * 2;
+      y = y * 2;
+      if (coverageMap[z] == undefined) coverageMap[z] = {};
+      if (coverageMap[z][x] == undefined) coverageMap[z][x] = {};
+      if (coverageMap[z][x + 1] == undefined) coverageMap[z][x + 1] = {};
+      coverageMap[z][x][y] = tilemap[0];
+      if (isNaN(tilemap[0])) {
+        calculateCoverage(z, x, y, tilemap[0], coverageMap);
+      }
+      coverageMap[z][x + 1][y] = tilemap[1];
+      if (isNaN(tilemap[1])) {
+        calculateCoverage(z, x + 1, y, tilemap[1], coverageMap);
+      }
+      coverageMap[z][x][y + 1] = tilemap[2];
+      if (isNaN(tilemap[2])) {
+        calculateCoverage(z, x, y + 1, tilemap[2], coverageMap);
+      }
+      coverageMap[z][x + 1][y + 1] = tilemap[3];
+      if (isNaN(tilemap[3])) {
+        calculateCoverage(z, x + 1, y + 1, tilemap[3], coverageMap);
+      }
+    }
+    // Get and calculate the tilemap
+    if (source.coverageCheck > 0 && tilePackageFiles["p12/tilemap/root.json"]) {
+      const tilemap = await getJsonFromFile(
+        "p12/tilemap/root.json",
+        tilePackageFiles,
+        source,
+      );
+      const coverageMap = {};
+      coverageMap[0] = {};
+      coverageMap[0][0] = {};
+      coverageMap[0][0][0] = "blob";
+      calculateCoverage(0, 0, 0, tilemap.index, coverageMap);
+      root.coverageMap = coverageMap;
+      console.log("coverage map", coverageMap);
+    }
   }
-  //TODO read iteminfo.xml....
 
   const header = jsonToHeader(root, tilePackageFiles, resp.etag);
-
-  //return [header, [dirKey, rootDir.length, rootDir]];
   return [header, ""];
 }

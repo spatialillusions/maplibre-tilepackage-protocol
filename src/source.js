@@ -18,9 +18,12 @@ export class Source {
  * see https://developer.mozilla.org/en-US/docs/Web/API/File_API
  */
 export class FileSource extends Source {
-  constructor(file) {
+  constructor(file, options) {
     super();
     this.file = file;
+    if (options && options.coverageCheck) {
+      this.coverageCheck = options.coverageCheck;
+    }
   }
 
   getKey() {
@@ -48,7 +51,7 @@ export class FileSource extends Source {
  * This also works around browser and storage-specific edge cases.
  */
 export class FetchSource extends Source {
-  constructor(url, customHeaders = new Headers()) {
+  constructor(url, options, customHeaders = new Headers()) {
     super();
     this.url = url;
     this.customHeaders = customHeaders;
@@ -62,6 +65,9 @@ export class FetchSource extends Source {
     this.chromeWindowsNoCache = false;
     if (isWindows && isChromiumBased) {
       this.chromeWindowsNoCache = true;
+    }
+    if (options && options.coverageCheck) {
+      this.coverageCheck = options.coverageCheck;
     }
   }
 

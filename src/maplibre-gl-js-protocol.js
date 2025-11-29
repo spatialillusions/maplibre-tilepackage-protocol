@@ -52,6 +52,7 @@ export class Protocol {
     this.errorOnMissingTile = options
       ? options.errorOnMissingTile || false
       : false;
+    this.debug = options ? options.debug || false : false;
     this.getData = async (params, abortController) => {
       if (params.type === "json") {
         let tilePackageUrl = params.url.substr(14); // TODO fix this to be more robust
@@ -91,9 +92,10 @@ export class Protocol {
         }
         // This is a request for a tile json
         if (this.metadata) {
-          return {
-            data: await instance.getTileJson(params.url),
-          };
+          const tj = await instance.getTileJson(params.url);
+          if (this.debug)
+            console.debug("[tilepackage] tilejson (metadata)", tj);
+          return { data: tj };
         }
         const h = await instance.getHeader();
         if (h.minLon >= h.maxLon || h.minLat >= h.maxLat) {
@@ -102,14 +104,15 @@ export class Protocol {
           );
         }
 
-        return {
-          data: {
-            tiles: [`${params.url}/{z}/{x}/{y}`],
-            minzoom: h.minZoom,
-            maxzoom: h.maxZoom,
-            bounds: [h.minLon, h.minLat, h.maxLon, h.maxLat],
-          },
+        const synthesized = {
+          tiles: [`${params.url}/{z}/{x}/{y}`],
+          minzoom: h.minZoom,
+          maxzoom: h.maxZoom,
+          bounds: [h.minLon, h.minLat, h.maxLon, h.maxLat],
         };
+        if (this.debug)
+          console.debug("[tilepackage] tilejson (synthesized)", synthesized);
+        return { data: synthesized };
         //}
       }
       // TODO handle other paths ???
@@ -197,6 +200,13 @@ export class Protocol {
       const y = result[4];
       const header = await instance.getHeader();
       const resp = await instance.getZxy(+z, +x, +y, abortController.signal);
+      if (this.debug)
+        console.debug("[tilepackage] tile fetch", {
+          z: +z,
+          x: +x,
+          y: +y,
+          found: !!resp,
+        });
       if (resp) {
         return {
           data: new Uint8Array(resp.data),
@@ -206,11 +216,23 @@ export class Protocol {
       }
       if (header.tileType === "pbf") {
         if (this.errorOnMissingTile) {
+          //*
           const e = new Error(
-            "Tile not found in Tile Package, this is normal for VTPK files with variable tile depth.",
-          ); // e.name is 'Error'
+            `Tile [${z},${x},${y}] not found in Tile Package, normal for VTPK with variable depth.`,
+          );
           e.name = "TileError";
+          if (this.debug)
+            console.debug("[tilepackage] missing tile", { z, x, y });
           throw e;
+          //*/
+          /*
+          const response = new Response(null, {
+            status: 204,
+            statusText: `Tile [${z},${x},${y},] not found in Tile Package, this is normal for VTPK files with variable tile depth.`,
+          });
+          console.log(response);
+          return response;
+          //*/
         }
         return { data: new Uint8Array() };
       } else {
@@ -229,12 +251,15 @@ export class Protocol {
    */
   add(p) {
     this.tiles.set(p.source.getKey(), p);
+    if (this.debug)
+      console.debug("[tilepackage] add instance", p.source.getKey());
   }
 
   /**
    * Fetch a {@link TilePackage} instance by URL, for remote TilePackage instances.
    */
   get(url) {
+    if (this.debug) console.debug("[tilepackage] get instance", url);
     return this.tiles.get(url);
   }
 }
