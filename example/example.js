@@ -1,6 +1,6 @@
 // Plain script (no modules) for running via file:// without CORS issues.
 // Requires dist/bundle.js to have been loaded first, exposing window.TilePackageProtocol.
-
+/* global maplibregl */
 (function () {
   if (!window.TilePackageProtocol) {
     console.error(
@@ -41,7 +41,10 @@
       if (currentMap) {
         try {
           currentMap.remove();
-        } catch (_) {}
+          // eslint-disable-next-line no-unused-vars
+        } catch (_) {
+          /* empty */
+        }
         currentMap = null;
       }
       currentMap = new maplibregl.Map({
@@ -87,6 +90,7 @@
         const resolved = new URL(u, window.location.href).href;
         console.debug("[example] Resolved relative URL to", resolved);
         return resolved;
+        // eslint-disable-next-line no-unused-vars
       } catch (e) {
         alert("Invalid relative URL");
         return null;
@@ -96,14 +100,20 @@
     return null;
   }
 
-  function initWithUrl(url) {
+  async function initWithUrl(url) {
     const clean = sanitizeUrl(url);
     if (!clean) return;
     console.log("Loading remote TilePackage URL:", clean);
     try {
       const pkg = new TilePackage(clean);
       console.log("TilePackage (remote):", pkg);
-      initMap(pkg);
+      // Await map initialization so we only reflect URL on success
+      await initMap(pkg);
+      // If URL input exists and is empty, show the URL used for initialization
+      const urlInput = document.getElementById("tilepackage-url");
+      if (urlInput && !urlInput.value) {
+        urlInput.value = clean;
+      }
     } catch (err) {
       console.error("Failed to initialize map from URL", err);
       alert(
@@ -132,7 +142,7 @@
     }
     // Auto-load demo vtpk when served via http/https (not file://)
     if (location.protocol !== "file:") {
-      const demoName = "mgrs-grid.vtpk"; // present in example folder
+      const demoName = "natural-earth.vtpk"; // present in example folder
       // Use relative path so it works regardless of host/port
       const demoUrl = demoName; // same directory as index.html
       console.log("Attempting auto-load of demo package:", demoUrl);
