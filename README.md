@@ -132,7 +132,10 @@ Flat and indexed VTPK archives are supported. Indexed packages rely on the overz
 ## Sample Data
 
 Austria indexed VTPK sample:
-https://www.data.gv.at/katalog/de/dataset/basemap-at-verwaltungsgrundkarte-vektor-offline-osterreich#resources
+https://cdn.basemap.at/offline/bmapv_vtpk_3857.vtpk
+
+There is also a small example file in the example folder, and there is an online version of the example available here:
+https://spatialillusions.com/maplibre-tilepackage-protocol/
 
 ## Acknowledgement
 
