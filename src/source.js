@@ -56,9 +56,18 @@ export class FetchSource extends Source {
     this.url = url;
     this.customHeaders = customHeaders;
     this.mustReload = false;
+    // Safe global detection for legacy environments without globalThis
+    const g =
+      typeof globalThis !== "undefined"
+        ? globalThis
+        : typeof window !== "undefined"
+          ? window
+          : typeof self !== "undefined"
+            ? self
+            : {};
     let userAgent = "";
-    if ("navigator" in globalThis) {
-      userAgent = globalThis.navigator.userAgent || "";
+    if (g && typeof g.navigator !== "undefined") {
+      userAgent = g.navigator.userAgent || "";
     }
     const isWindows = userAgent.indexOf("Windows") > -1;
     const isChromiumBased = /Chrome|Chromium|Edg|OPR|Brave/.test(userAgent);

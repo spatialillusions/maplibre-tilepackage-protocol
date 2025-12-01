@@ -12,7 +12,7 @@ function calculateFilename(z, x, y, header) {
   const baseCol = Math.floor(x / 128) * 128;
   const rowHex = baseRow.toString(16).padStart(4, "0");
   const colHex = baseCol.toString(16).padStart(4, "0");
-  let basePath = header.type === "tpkx" ? "tile" : "p12/tile";
+  const basePath = header.type === "tpkx" ? "tile" : "p12/tile";
   return `${basePath}/L${zoom}/R${rowHex}C${colHex}.bundle`;
 }
 
