@@ -61,10 +61,10 @@ export class FetchSource extends Source {
       typeof globalThis !== "undefined"
         ? globalThis
         : typeof window !== "undefined"
-          ? window
-          : typeof self !== "undefined"
-            ? self
-            : {};
+        ? window
+        : typeof self !== "undefined"
+        ? self
+        : {};
     let userAgent = "";
     if (g && typeof g.navigator !== "undefined") {
       userAgent = g.navigator.userAgent || "";
