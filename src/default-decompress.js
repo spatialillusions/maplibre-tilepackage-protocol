@@ -17,10 +17,10 @@ export default async function defaultDecompress(buf, compression) {
       typeof globalThis !== "undefined"
         ? globalThis
         : typeof window !== "undefined"
-          ? window
-          : typeof self !== "undefined"
-            ? self
-            : {};
+        ? window
+        : typeof self !== "undefined"
+        ? self
+        : {};
     if (typeof g.DecompressionStream === "undefined") {
       return fflate.decompressSync(new Uint8Array(buf));
     }
