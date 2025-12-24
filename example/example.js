@@ -15,6 +15,8 @@
   async function initMap(pkg) {
     const header = await pkg.getHeader();
     console.log("TilePackage header:", header);
+    const metadata = await pkg.getMetadata();
+    console.log("TilePackage metadata:", metadata);
     if (header.spatialReference == 3857) {
       const style = await pkg.getStyle();
       console.log("TilePackage style:", style);

@@ -6,6 +6,16 @@ import defaultDecompress from "./default-decompress.js";
 import getJsonFromFile from "./get-json-from-file.js";
 import SharedPromiseCache from "./shared-promise-cache.js";
 
+/**
+ * Escape literal newlines in JSON text.
+ * Replaces actual newline characters with the JSON escape sequence.
+ */
+function escapeJsonNewlines(text) {
+  // Replace literal newlines with JSON escape sequences
+  // This handles \r\n, \n, and \r
+  return text.replace(/\r\n/g, "\\n").replace(/[\r\n]/g, "\\n");
+}
+
 function calculateFilename(z, x, y, header) {
   const zoom = z.toString().padStart(2, "0");
   const baseRow = Math.floor(y / 128) * 128;
@@ -172,13 +182,16 @@ export class TilePackage {
     let metadata = {};
     if (header.packageType === "vtpk") {
       const resp = await this.source.getBytes(
-        header.jsonMetadataOffset,
-        header.jsonMetadataLength,
+        header.metadataOffset,
+        header.metadataLength,
         undefined,
         header.etag,
       );
       const decoder = new TextDecoder("utf-8");
-      metadata = JSON.parse(decoder.decode(resp.data));
+      const jsonText = decoder.decode(resp.data);
+      console.log("test", jsonText);
+      console.log("escaped text", escapeJsonNewlines(jsonText));
+      metadata = JSON.parse(escapeJsonNewlines(jsonText));
     }
     metadata.name = header.name;
     return metadata;
