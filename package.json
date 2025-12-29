@@ -1,6 +1,6 @@
 {
   "name": "maplibre-tilepackage-protocol",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Maplibre-gl-js protocol for reading VTPK and TPKX files",
   "homepage": "https://github.com/spatialillusions/maplibre-tilepackage-protocol#readme",
   "bugs": {
