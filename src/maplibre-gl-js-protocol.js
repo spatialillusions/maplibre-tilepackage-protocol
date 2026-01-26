@@ -1,5 +1,5 @@
 import { TilePackage } from "./index.js";
-import protocolGlyphs from "maplibre-local-glyphs";
+//import protocolGlyphs from "maplibre-local-glyphs";
 
 function stringEndsIn(string, endings) {
   for (let i = 0; i < endings.length; i++) {
@@ -173,13 +173,14 @@ export class Protocol {
             }
 
             // Fallback to local glyphs since we couldn't load the coorect from the vtpk
+            /*
             const fallback = await protocolGlyphs({
               url: `glyphs://${result[2]}/${result[3]}`,
             });
             if (fallback) {
               return fallback;
             }
-
+            */
             return { data: null };
           }
         }

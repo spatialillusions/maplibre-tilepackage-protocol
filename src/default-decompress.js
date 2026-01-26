@@ -12,23 +12,16 @@ export default async function defaultDecompress(buf, compression) {
     return buf;
   }
   if (compression === "gzip") {
-    // Safe global detection for DecompressionStream feature test
-    const g =
-      typeof globalThis !== "undefined"
-        ? globalThis
-        : typeof window !== "undefined"
-        ? window
-        : typeof self !== "undefined"
-        ? self
-        : {};
-    if (typeof g.DecompressionStream === "undefined") {
+    if (typeof globalThis.DecompressionStream === "undefined") {
       return fflate.decompressSync(new Uint8Array(buf));
     }
     const stream = new Response(buf).body;
     if (!stream) {
       throw new Error("Failed to read response stream");
     }
-    const result = stream.pipeThrough(new g.DecompressionStream("gzip"));
+    const result = stream.pipeThrough(
+      new globalThis.DecompressionStream("gzip"),
+    );
     return new Response(result).arrayBuffer();
   }
   throw new Error("Compression method not supported");

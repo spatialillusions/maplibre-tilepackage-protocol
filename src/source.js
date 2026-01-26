@@ -21,9 +21,11 @@ export class FileSource extends Source {
   constructor(file, options) {
     super();
     this.file = file;
+    this.coverageCheck = 1;
     if (options && options.coverageCheck) {
       this.coverageCheck = options.coverageCheck;
     }
+    //console.log("Tilepackage FileSource initialized", this.file);
   }
 
   getKey() {
@@ -56,18 +58,9 @@ export class FetchSource extends Source {
     this.url = url;
     this.customHeaders = customHeaders;
     this.mustReload = false;
-    // Safe global detection for legacy environments without globalThis
-    const g =
-      typeof globalThis !== "undefined"
-        ? globalThis
-        : typeof window !== "undefined"
-        ? window
-        : typeof self !== "undefined"
-        ? self
-        : {};
     let userAgent = "";
-    if (g && typeof g.navigator !== "undefined") {
-      userAgent = g.navigator.userAgent || "";
+    if ("navigator" in globalThis) {
+      userAgent = globalThis.navigator.userAgent || "";
     }
     const isWindows = userAgent.indexOf("Windows") > -1;
     const isChromiumBased = /Chrome|Chromium|Edg|OPR|Brave/.test(userAgent);
@@ -75,6 +68,7 @@ export class FetchSource extends Source {
     if (isWindows && isChromiumBased) {
       this.chromeWindowsNoCache = true;
     }
+    this.coverageCheck = 1;
     if (options && options.coverageCheck) {
       this.coverageCheck = options.coverageCheck;
     }

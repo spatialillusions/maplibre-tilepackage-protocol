@@ -3,18 +3,8 @@ export * from "./source.js";
 import { FetchSource } from "./source.js";
 import subdivideVectorTile from "./tilecutter/subdivide.js";
 import defaultDecompress from "./default-decompress.js";
-import getJsonFromFile from "./get-json-from-file.js";
+import getJsonFromFile from "./zip/get-json-from-file.js";
 import SharedPromiseCache from "./shared-promise-cache.js";
-
-/**
- * Escape literal newlines in JSON text.
- * Replaces actual newline characters with the JSON escape sequence.
- */
-function escapeJsonNewlines(text) {
-  // Replace literal newlines with JSON escape sequences
-  // This handles \r\n, \n, and \r
-  return text.replace(/\r\n/g, "\\n").replace(/[\r\n]/g, "\\n");
-}
 
 function calculateFilename(z, x, y, header) {
   const zoom = z.toString().padStart(2, "0");
@@ -22,7 +12,12 @@ function calculateFilename(z, x, y, header) {
   const baseCol = Math.floor(x / 128) * 128;
   const rowHex = baseRow.toString(16).padStart(4, "0");
   const colHex = baseCol.toString(16).padStart(4, "0");
-  const basePath = header.type === "tpkx" ? "tile" : "p12/tile";
+  let basePath;
+  if (header.type === "tpkx") {
+    basePath = `tile`;
+  } else {
+    basePath = `p12/tile`;
+  }
   return `${basePath}/L${zoom}/R${rowHex}C${colHex}.bundle`;
 }
 
@@ -32,6 +27,10 @@ function getTileInfoFromTileIndex(tileIndex, z, x, y) {
   return tileIndex[row][col];
 }
 
+/**
+ * Error thrown when a response for TilePackage over HTTP does not match previous, cached parts of the archive.
+ * The default TilePackage implementation will catch this error once internally and retry a request.
+ */
 class EtagMismatch extends Error {
   constructor(message) {
     super(message);
@@ -44,25 +43,23 @@ export class TilePackage {
     // Default coverageCheck enabled; disable with coverageCheck:false
     this.coverageCheck = 1;
     if (options && options.coverageCheck === false) this.coverageCheck = 0;
-    // Max dz guard (skip subdivision beyond this): default 8
-    this.maxDz =
-      options && typeof options.maxDz === "number" ? options.maxDz : 8;
     if (typeof source === "string") {
-      const opts = this.coverageCheck
-        ? { coverageCheck: this.coverageCheck }
-        : undefined;
-      this.source = new FetchSource(source, opts);
+      this.source = new FetchSource(source, this.coverageCheck);
     } else {
       this.source = source;
-      // Propagate default coverageCheck to existing Source instances if undefined
-      if (this.source && this.source.coverageCheck === undefined) {
-        this.source.coverageCheck = this.coverageCheck;
-      }
     }
-    this.decompress =
-      options && options.decompress ? options.decompress : defaultDecompress;
-    this.cache =
-      options && options.cache ? options.cache : new SharedPromiseCache();
+
+    if (options && options.decompress) {
+      this.decompress = options.decompress;
+    } else {
+      this.decompress = defaultDecompress;
+    }
+
+    if (options && options.cache) {
+      this.cache = options.cache;
+    } else {
+      this.cache = new SharedPromiseCache();
+    }
   }
 
   async getHeader() {
@@ -179,21 +176,21 @@ export class TilePackage {
 
   async getMetadataAttempt() {
     const header = await this.cache.getHeader(this.source);
+
     let metadata = {};
     if (header.packageType === "vtpk") {
       const resp = await this.source.getBytes(
-        header.metadataOffset,
-        header.metadataLength,
+        header.jsonMetadataOffset,
+        header.jsonMetadataLength,
         undefined,
         header.etag,
       );
+
       const decoder = new TextDecoder("utf-8");
-      const jsonText = decoder.decode(resp.data);
-      console.log("test", jsonText);
-      console.log("escaped text", escapeJsonNewlines(jsonText));
-      metadata = JSON.parse(escapeJsonNewlines(jsonText));
+      metadata = JSON.parse(decoder.decode(resp.data));
     }
     metadata.name = header.name;
+
     return metadata;
   }
 
@@ -211,7 +208,10 @@ export class TilePackage {
 
   async getResourceAttempt(file, signal) {
     const header = await this.cache.getHeader(this.source);
-    if (!header.files[file]) return undefined;
+    if (!header.files[file]) {
+      return undefined;
+    }
+
     const resource = await this.cache.getResource(
       this.source,
       file,
@@ -251,49 +251,36 @@ export class TilePackage {
         header.files,
         this.source,
       );
-      if (style.sources && style.sources.esri) {
-        delete style.sources.esri.url;
-        style.sources.esri.tiles = [`tilepackage://${sourceKey}/{z}/{x}/{y}`];
-        style.sources.esri.type = style.sources.esri.type || "vector";
-        style.sources.esri.minzoom = header.minZoom || 0;
-        style.sources.esri.maxzoom = header.maxZoom || 22;
-      }
-      for (const k in style.sources) {
-        const src = style.sources[k];
-        if (
-          src &&
-          typeof src.url === "string" &&
-          src.url.startsWith("tilepackage://")
-        ) {
-          delete src.url;
-          if (!src.tiles)
-            src.tiles = [`tilepackage://${sourceKey}/{z}/{x}/{y}`];
-        }
-      }
-      if (metadata.copyrightText)
+      style.sources.esri.url = `tilepackage://${sourceKey}`;
+      style.sources.esri.minzoom = 0; //header.maxZoom || 22;
+      style.sources.esri.maxzoom = header.maxZoom || 22;
+      if (metadata.copyrightText) {
         style.sources.esri.attribution = metadata.copyrightText;
+      }
       style.glyphs = `tilepackage://${sourceKey}/{fontstack}/{range}`;
       style.sprite = `tilepackage://${sourceKey}/sprite`;
-      if (this.debug)
-        console.debug(
-          "[tilepackage style] rewritten esri source",
-          style.sources.esri,
-        );
+      return style;
+    } else {
+      const style = {
+        version: 8,
+        sources: {
+          esri: {
+            type: "raster",
+            tileSize: header.tileSize || 256,
+            url: `tilepackage://${sourceKey}`,
+            maxzoom: header.maxZoom || 22,
+          },
+        },
+        layers: [
+          {
+            id: "tilepackageraster",
+            type: "raster",
+            source: "esri",
+          },
+        ],
+      };
       return style;
     }
-    return {
-      version: 8,
-      sources: {
-        esri: {
-          type: "raster",
-          tileSize: header.tileSize || 256,
-          tiles: [`tilepackage://${sourceKey}/{z}/{x}/{y}`],
-          maxzoom: header.maxZoom || 22,
-          minzoom: header.minZoom || 0,
-        },
-      },
-      layers: [{ id: "tilepackageraster", type: "raster", source: "esri" }],
-    };
   }
 
   async getStyle() {
@@ -312,6 +299,7 @@ export class TilePackage {
     const header = await this.getHeader();
     const metadata = await this.getMetadata();
     const ext = header.tileType;
+
     const tileJson = {
       tilejson: "3.0.0",
       scheme: "xyz",
@@ -320,11 +308,21 @@ export class TilePackage {
       version: header.version,
       bounds: [header.minLon, header.minLat, header.maxLon, header.maxLat],
     };
-    if (metadata.vector_layers) tileJson.vector_layers = metadata.vector_layers;
-    if (metadata.attribution) tileJson.attribution = metadata.attribution;
-    if (metadata.description) tileJson.description = metadata.description;
-    if (header.minZoom) tileJson.minzoom = header.minZoom;
-    if (header.maxZoom) tileJson.maxzoom = header.maxZoom;
+    if (metadata.vector_layers) {
+      tileJson.vector_layers = metadata.vector_layers;
+    }
+    if (metadata.attribution) {
+      tileJson.attribution = metadata.attribution;
+    }
+    if (metadata.description) {
+      tileJson.description = metadata.description;
+    }
+    if (header.minZoom) {
+      tileJson.minzoom = header.minZoom;
+    }
+    if (header.maxZoom) {
+      tileJson.maxzoom = header.maxZoom;
+    }
     return tileJson;
   }
 }
