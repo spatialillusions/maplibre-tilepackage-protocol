@@ -8,7 +8,6 @@ const externals = [
   "pbf",
   "@mapbox/point-geometry",
   "@maplibre/vt-pbf",
-  "maplibre-local-glyphs",
 ];
 
 function onwarn(warning) {
